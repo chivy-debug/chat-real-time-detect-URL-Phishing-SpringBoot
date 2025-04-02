@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Đăng Nhập - Cộng đồng sinh viên </title>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stompjs/lib/stomp.min.js"></script>
+    <link rel="stylesheet" href="/css/login.css">
+
+</head>
+<body>
+<div class="banner">
+    <img src="https://file1.hutech.edu.vn/file/slider/1702831730864786.jpg" alt="Banner Hutech">
+</div>
+<div class="container" id="username-page">
+    <div class="login-container">
+        <h2>Cộng đồng sinh viên </h2>
+        <form id="usernameForm">
+            <div class="input-group">
+                <input type="email"
+                       id="username"
+                       placeholder="Nhập email của bạn"
+                       required
+                       autocomplete="off"
+                       pattern="^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
+                       title="Vui lòng nhập một địa chỉ email hợp lệ">
+            </div>
+            <button type="submit" class="login-btn">
+                <span class="btn-text">Đăng Nhập</span>
+                <div class="loading">⌛</div>
+            </button>
+            <div id="error-message"></div>
+        </form>
+    </div>
+</div>
+
+<!--Main-->
+
+<script src="/js/main.js"></script>
+
+</body>
+</html>

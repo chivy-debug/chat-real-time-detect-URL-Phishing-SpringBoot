@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EduTalk - Chat</title>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stompjs/lib/stomp.min.js"></script>
+    <link rel="stylesheet" href="/css/chat.css">
+    <link rel="stylesheet" href="style.css?v=1.0">
+    <style>
+        .phishing-link {
+            color: #dc3545; /* Red color for phishing links */
+            font-weight: bold;
+            text-decoration: underline;
+            background-color: #f8d7da; /* Light red background */
+            border-radius: 5px;
+            padding: 2px 5px;
+            transition: all 0.3s ease;
+        }
+
+        .phishing-link:hover {
+            color: #fff;
+            background-color: #c82333; /* Darker red when hovering */
+            text-decoration: none; /* Remove underline on hover */
+        }
+
+        .phishing-link:focus {
+            outline: none; /* Remove default focus outline */
+            box-shadow: 0 0 5px rgba(220, 53, 69, 0.5); /* Add a glow effect for focus */
+        }
+
+    </style>
+</head>
+<body>
+
+<div id="chat-page">
+    <div class="banner"></div>
+
+    <div class="content">
+        <div id="chat-container">
+            <div id="chat-header">
+                <h2><i class="fas fa-comments"></i> EduTalk</h2>
+                <button class="logout-btn">
+                    <i class="fas fa-sign-out-alt"></i> Đăng xuất
+                </button>
+            </div>
+
+            <div class="connecting">
+                Connecting...
+            </div>
+
+            <div id="chat-box"></div>
+            <div id="input-container">
+                <form id="messageForm">
+                    <input type="text" id="message-input" placeholder="Nhập tin nhắn..."/>
+                    <button id="send-btn">
+                        Gửi <i class="fas fa-paper-plane"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!--    <div id="phishing-alert">Cảnh báo: Nghi ngờ URL lừa đảo!</div>-->
+
+    <div id="phishing-confirmation">
+        <h3>⚠️Nghi ngờ URL lừa đảo</h3>
+        <p>Bạn có muốn xóa tin nhắn chứa URL <span id="phishing-url"
+                                                   style="color: #0d6efd; word-wrap: break-word; font-weight: bold; background: #e7f1ff; padding: 2px 6px; border-radius: 5px;">[URL here]</span>không?
+        </p>
+        <div class="confirmation-buttons">
+            <button class="delete-btn">Xóa tin nhắn</button>
+            <button class="cancel-btn">Hủy</button>
+        </div>
+    </div>
+
+    <!-- Modal cảnh báo -->
+    <div id="phishing-modal" class="phishing-modal">
+        <div class="modal-content">
+            <h3>⚠️ Cảnh báo URL lừa đảo</h3>
+            <p>Bạn có chắc chắn muốn tiếp tục truy cập vào URL này?</p>
+            <div class="modal-buttons">
+                <button id="continue-btn">Tiếp tục</button>
+                <button id="cancel-btn">Hủy</button>
+            </div>
+        </div>
+    </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/darkmode-js@1.5.7/lib/darkmode-js.min.js"></script>
+<script>
+    'use strict';
+
+    var chatPage = document.querySelector('#chat-page');
+    var messageForm = document.querySelector('#messageForm');
+    var messageInput = document.querySelector('#message-input');
+    var messageArea = document.querySelector('#chat-box');
+    var connectingElement = document.querySelector('.connecting');
+    var logoutButton = document.querySelector('.logout-btn');
+    // var phishingAlert = document.querySelector('#phishing-alert');
+    var phishingConfirmation = document.querySelector('#phishing-confirmation');
+    var phishingUrlSpan = document.querySelector('#phishing-url');
+    var deleteButton = document.querySelector('.delete-btn');
+    var cancelButton = document.querySelector('.cancel-btn');
+    var phishingModal = document.querySelector('#phishing-modal');
+    var continueBtn = document.querySelector('#continue-btn');
+    var cancelModalBtn = document.querySelector('#cancel-btn');
+
+    if (logoutButton) {
+        logoutButton.addEventListener('click', function () {
+            onDisconnected();
+            sessionStorage.removeItem('username');
+            window.location.href = 'http://localhost:8080/';
+        });
+    }
+
+    var stompClient = null;
+    var username = sessionStorage.getItem('username');
+
+    if (!username) {
+        window.location.href = 'index.html'; // Redirect to login page if username not found
+    }
+
+    var colors = [
+        '#2196F3', '#32c787', '#00BCD4', '#ff5652',
+        '#ffc107', '#ff85af', '#FF9800', '#39bbb0'
+    ];
+
+    function onConnected() {
+        stompClient.subscribe('/topic/chat', onMessageReceived);
+        stompClient.send("/app/chat.addUser", {}, JSON.stringify({sender: username, type: 'JOIN'})); // Thêm người tham gia
+        connectingElement.classList.add('hidden');
+    }
+
+    function onDisconnected() {
+        stompClient.send("/app/chat.addUser", {}, JSON.stringify({sender: username, type: 'LEAVE'}));
+    }
+
+    function onError(error) {
+        connectingElement.textContent = 'Không thể kết nối. Vui lòng thử lại';
+        connectingElement.style.color = 'red';
+    }
+
+    function sendMessage(event) {
+        event.preventDefault();
+
+        var messageContent = messageInput.value.trim();
+
+        if (messageContent && stompClient) {
+            var chatMessage = {
+                sender: username,
+                content: messageInput.value,
+                type: 'CHAT'
+            };
+
+            stompClient.send("/app/chat.sendMessage", {}, JSON.stringify(chatMessage));
+            messageInput.value = '';
+        }
+    }
+
+    function onMessageReceived(payload) {
+        var message = JSON.parse(payload.body);
+        var messageElement = document.createElement('li');
+        var flag = 0;
+
+        // Kiểm tra xem tin nhắn là ai tham gia hoặc rời đi
+        if (message.type === 'JOIN') {
+            messageElement.classList.add('event-message');
+            message.content = message.sender + ' đã tham gia cuộc trò chuyện!';
+        } else if (message.type === 'LEAVE') {
+            messageElement.classList.add('event-message');
+            message.content = message.sender + ' đã rời khỏi cuộc trò chuyện!';
+        } else {
+            messageElement.classList.add('chat-message');
+
+            // Kiểm tra nếu tin nhắn là của người dùng hiện tại
+
+
+            var avatarElement = document.createElement('i');
+            var avatarText = document.createTextNode(message.sender[0]);
+            avatarElement.appendChild(avatarText);
+            avatarElement.style['background-color'] = getAvatarColor(message.sender);
+
+            messageElement.appendChild(avatarElement);
+
+            var usernameElement = document.createElement('span');
+            var usernameText = document.createTextNode(message.sender);
+            usernameElement.appendChild(usernameText);
+            messageElement.appendChild(usernameElement);
+
+            if (message.sender === username) {
+                messageElement.classList.add('sent-message'); // Tin nhắn người gửi
+            } else {
+                messageElement.classList.add('received-message'); // Tin nhắn nhận được
+                checkMessageForPhishingUrls(message.content, messageElement);  // Kiểm tra URL trong tin nhắn
+                flag = 1;
+            }
+        }
+
+        if (flag === 0) {
+            var textElement = document.createElement('p');
+            var messageText = document.createTextNode(message.content);
+            textElement.appendChild(messageText);
+
+            messageElement.appendChild(textElement);
+        }
+
+
+        messageArea.appendChild(messageElement);
+        messageArea.scrollTop = messageArea.scrollHeight;
+    }
+
+    function checkMessageForPhishingUrls(content, messageElement) {
+        var urls = content.match(/http[s]?:\/\/[^\s]+/g);
+        if (urls) {
+            // Replace the URLs with anchor <a> tags
+            urls.forEach(url => {
+                checkUrlPhishing(url, messageElement); // Check for phishing
+                content = content.replace(url, `<a href="${url}" target="_blank" class="phishing-link">${url}</a>`);
+            });
+
+            // Only append the content with the anchor tags
+            var textElement = messageElement.querySelector('p');
+            if (!textElement) {
+                textElement = document.createElement('p');
+                messageElement.appendChild(textElement);
+            }
+            textElement.innerHTML = content;  // Use innerHTML to include the <a> tags
+        } else {
+            // If there are no URLs, we just create the usual message
+            var textElement = messageElement.querySelector('p');
+            if (!textElement) {
+                textElement = document.createElement('p');
+                messageElement.appendChild(textElement);
+            }
+            textElement.textContent = content;  // Use textContent for regular messages without HTML tags
+        }
+    }
+
+    function checkUrlPhishing(url, messageElement) {
+        fetch('http://localhost:5000/analyze', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({url: url})
+        })
+            .then(response => response.json())
+            .then(data => {
+                if (data.is_phishing) {
+                    phishingUrlSpan.textContent = url;
+                    sendPhishingAlertEmail(messageElement.querySelector('span').textContent, url); // Thay username bằng message.sender
+
+                    // Hiển thị cảnh báo và cho phép xóa tin nhắn
+                    if (messageElement.classList.contains('received-message')) {
+                        phishingConfirmation.style.display = 'block'; // Hiển thị confirmation box
+
+                        // Thêm sự kiện xóa tin nhắn khi người dùng muốn xóa
+                        deleteButton.onclick = function () {
+                            messageElement.remove(); // Xóa tin nhắn hiện tại
+                            phishingConfirmation.style.display = 'none';
+                        };
+
+                        // Ẩn cảnh báo nếu người dùng hủy
+                        cancelButton.onclick = function () {
+                            phishingConfirmation.style.display = 'none';
+                        };
+                    }
+                }
+            });
+    }
+
+
+
+    function sendPhishingAlertEmail(sender, url) {
+        fetch('/api/sendPhishingAlert', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                email: sender,  // Gửi email tới người gửi tin nhắn (message.sender)
+                url: url
+            })
+        })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Phishing alert sent to user');
+            })
+            .catch(error => {
+                console.error('Error sending phishing alert email:', error);
+            });
+    }
+
+
+    // Cảnh báo khi nhấp vào URL lừa đảo
+    document.addEventListener('click', function (event) {
+        if (event.target.classList.contains('phishing-link')) {
+            event.preventDefault(); // Ngừng hành động mặc định
+
+            // Hiển thị modal cảnh báo
+            phishingModal.style.display = 'flex';
+
+            continueBtn.onclick = function () {
+                window.open(event.target.href, "_blank"); // Tiếp tục truy cập URL
+                phishingModal.style.display = 'none';
+            };
+
+            cancelModalBtn.onclick = function () {
+                phishingModal.style.display = 'none'; // Hủy và đóng modal
+            };
+        }
+    });
+
+    function getAvatarColor(messageSender) {
+        var hash = 0;
+        for (var i = 0; i < messageSender.length; i++) {
+            hash = 31 * hash + messageSender.charCodeAt(i);
+        }
+        var index = Math.abs(hash % colors.length);
+        return colors[index];
+    }
+
+    // Create SockJS connection
+    var socket = new SockJS('/ws');
+    stompClient = Stomp.over(socket);
+    stompClient.connect({}, onConnected, onError);
+
+    if (messageForm != null) {
+        messageForm.addEventListener('submit', sendMessage, true);
+    }
+
+    function addDarkmodeWidget() {
+        const options = {
+            bottom: '120px',
+            right: '32px',
+            left: 'unset',
+            time: '0.5s',
+            mixColor: '#fff',
+            backgroundColor: '#fff',
+            buttonColorDark: '#100f2c',
+            buttonColorLight: '#fff',
+            saveInCookies: true,
+            label: '🌓',
+            autoMatchOsTheme: true
+        };
+        const darkmode = new Darkmode(options);
+        darkmode.showWidget();
+
+        document.querySelector('.darkmode-toggle').addEventListener('click', function () {
+            setDarkmodeCookie(document.body.classList.contains('darkmode--activated'));
+        });
+    }
+
+    function setDarkmodeCookie(isDark) {
+        document.cookie = "darkmode=" + isDark + "; path=/";
+    }
+
+    function loadDarkmode() {
+        const darkmodeCookie = document.cookie.split('; ').find(row => row.startsWith('darkmode='));
+        if (darkmodeCookie && darkmodeCookie.split('=')[1] === 'true') {
+            document.body.classList.add('darkmode');
+        }
+    }
+
+    window.addEventListener('load', function () {
+        loadDarkmode();
+        addDarkmodeWidget();
+    });
+</script>
+
+</body>
+</html>
